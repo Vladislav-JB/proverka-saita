@@ -101,7 +101,10 @@ aside{overflow-y:auto;border:1px solid var(--line);border-radius:14px;background
 .sum div{flex:1;text-align:center;border:1px solid rgba(224,187,98,.18);border-radius:10px;padding:8px 4px;font-size:12px;color:var(--mut)}
 .sum b{display:block;font:400 28px Forum;line-height:1.1}
 .sum .o b{color:var(--ok)}.sum .w b{color:var(--warn)}.sum .x b{color:var(--bad)}
-.note{margin-top:14px;padding:14px 16px;border-radius:10px;border:1px solid var(--ac);background:rgba(224,187,98,.08);font-size:14px}
+.note{margin-top:14px;padding:14px 16px;border-radius:10px;border:1px solid var(--ac);font-size:14px;position:sticky;top:-20px;z-index:2;background:linear-gradient(rgba(224,187,98,.12),rgba(224,187,98,.12)),#0b231c;box-shadow:0 12px 18px -8px rgba(2,14,10,.85)}
+aside.nocheck .sum{display:none}
+.ci[data-s=soon] .s{border-style:dashed;opacity:.55}
+.ci[data-s=soon] .t:after{content:"скоро";display:inline-block;margin-left:8px;padding:1px 7px;border-radius:4px;border:1px solid var(--line);color:var(--ac);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;vertical-align:2px}
 .note b{color:var(--ac)}
 .note .contacts{justify-content:flex-start;margin-top:12px;gap:8px}
 .note .btn{padding:9px 14px;font-size:13px}
@@ -131,8 +134,8 @@ aside{overflow-y:auto;border:1px solid var(--line);border-radius:14px;background
 .fw{flex:1;position:relative;overflow:hidden;min-height:0;background:#fff}
 .fw:before{content:"Загружаем сайт…";position:absolute;top:40%;left:0;right:0;text-align:center;color:#8a8f8c;font-size:15px}
 .view iframe{position:absolute;left:0;top:0;width:100%;height:100%;border:0;background:none;transform-origin:0 0}
-.vnote{background:#0f2e26;color:var(--mut);font-size:12.5px;padding:7px 14px}
-.vnote a{color:var(--ac)}
+.vnote{background:#0f2e26;color:var(--tx);font-size:14px;padding:10px 16px}
+.vnote a{color:var(--ac);font-weight:700;white-space:nowrap}
 
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.ci[data-s=run] .s{animation:none;border-color:var(--ac)}}
 @media (max-width:1000px){
@@ -141,6 +144,7 @@ aside{overflow-y:auto;border:1px solid var(--line);border-radius:14px;background
  .desk{grid-template-columns:minmax(0,1fr);height:auto;min-height:0}
  .view{order:-1}
  aside{overflow:visible}
+ .note{position:static;box-shadow:none}
 }
 @media (max-width:640px){
  .groups,.steps{grid-template-columns:minmax(0,1fr)}
@@ -223,7 +227,7 @@ aside{overflow-y:auto;border:1px solid var(--line);border-radius:14px;background
 <main id="check">
 <div class="desk">
   <aside>
-    <div class="site">Проверяем сайт<b id="host"></b></div>
+    <div class="site"><span id="lbl">Проверяем сайт</span><b id="host"></b></div>
     <div class="sum"><div class="o"><b id="nOk">0</b>в порядке</div><div class="w"><b id="nWarn">0</b>внимание</div><div class="x"><b id="nBad">0</b>проблемы</div></div>
     <div class="note" id="note"></div>
     <div id="list"></div>
@@ -327,11 +331,15 @@ function start(u, demo) {
   const q = new URLSearchParams({ url: href }); if (demo) q.set('demo', '1');
   history.replaceState(null, '', '?' + q);
   document.querySelectorAll('.ci').forEach(el => setS(el.id.slice(2), 'wait'));
+  document.querySelector('aside').classList.remove('nocheck'); $('lbl').textContent = 'Проверяем сайт';
   document.querySelectorAll('.ci').forEach(el => { const it = GROUPS.flatMap(g => g[1]).find(i => i[0] === el.id.slice(2)); el.querySelector('.d').textContent = it[2]; });
 
   if (demo) return runDemo();
   if (API) return runApi(href);
-  $('note').innerHTML = '<b>Автоматическая проверка скоро заработает.</b> Пока проверим ваш сайт вручную по всем пунктам – бесплатно. Напишите нам, пришлём результат.' +
+  // Проверка ещё не подключена: честно помечаем пункты «скоро» и прячем счётчики, чтобы нули не выглядели результатом
+  document.querySelector('aside').classList.add('nocheck'); $('lbl').textContent = 'Ваш сайт';
+  document.querySelectorAll('.ci').forEach(el => setS(el.id.slice(2), 'soon'));
+  $('note').innerHTML = '<b>Автоматическая проверка скоро заработает.</b> Пока проверим ваш сайт вручную по всем пунктам ниже – бесплатно. Напишите нам, пришлём результат.' +
     `<div class="contacts"><a class="btn" href="${wa}" target="_blank" rel="noopener">WhatsApp</a><a class="btn ghost" href="https://t.me/mrJB555" target="_blank" rel="noopener">Telegram</a></div>`;
 }
 
@@ -390,9 +398,10 @@ bind($('f2'), 'u2', null);
 function fit() {
   const fr = $('frame'), fw = $('fw');
   if (innerWidth < 1000) {
-    const s = Math.min(1, fw.clientWidth / 390);
-    fr.style.cssText = `width:390px;height:844px;transform:scale(${s})`;
-    fw.style.cssText = `flex:none;height:${Math.round(844 * s)}px`;
+    // высота – около половины экрана, чтобы под рамкой сразу было видно пояснение и список пунктов
+    const s = Math.min(1, fw.clientWidth / 390), H = Math.min(844, Math.round(innerHeight * 0.55 / s));
+    fr.style.cssText = `width:390px;height:${H}px;transform:scale(${s})`;
+    fw.style.cssText = `flex:none;height:${Math.round(H * s)}px`;
   } else {
     fw.style.cssText = '';
     const s = Math.min(1, fw.clientWidth / 1280);
