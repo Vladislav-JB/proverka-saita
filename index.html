@@ -254,7 +254,7 @@ aside.nocheck .sum{display:none}
 <script>
 // Адрес серверной функции проверки (Яндекс Облако). Пока пусто – проверка не подключена.
 // Функция получает ?url=… и возвращает {checks:{<id>:{s:'ok'|'warn'|'bad'|'skip', t:'пояснение'}}}.
-const API = '';
+const API = 'https://functions.yandexcloud.net/d4evqdjv68koi6hmjpsn';
 const WA = 'https://wa.me/79037117241';
 
 // Пункты проверки: [id, название, что проверяем]
@@ -349,14 +349,20 @@ async function runApi(href) {
   try {
     const r = await fetch(API + '?url=' + encodeURIComponent(href));
     const j = await r.json();
+    if (!j.checks) throw new Error(j.error || '');
     document.querySelectorAll('.ci').forEach(el => {
-      const id = el.id.slice(2), c = j.checks && j.checks[id];
+      const id = el.id.slice(2), c = j.checks[id];
       c ? setS(id, c.s, c.t) : setS(id, 'skip', 'Не удалось проверить');
     });
-    $('note').innerHTML = '<b>Проверка завершена.</b> Нажмите «Нужна помощь?» внизу, если хотите разобрать результаты.';
+    const bad = document.querySelectorAll('.ci[data-s=bad]').length, warn = document.querySelectorAll('.ci[data-s=warn]').length;
+    $('note').innerHTML = '<b>Проверка завершена.</b> ' + (bad || warn
+      ? 'Красные пункты мешают клиентам сильнее всего. Поможем исправить – напишите нам.'
+      : 'Серьёзных проблем не нашли.') +
+      ' Скорость и разбор текста «глазами клиента» подключим в ближайшее время.' +
+      `<div class="contacts"><a class="btn" href="${$('waHelp').href}" target="_blank" rel="noopener">WhatsApp</a><a class="btn ghost" href="https://t.me/mrJB555" target="_blank" rel="noopener">Telegram</a></div>`;
   } catch (e) {
     document.querySelectorAll('.ci').forEach(el => setS(el.id.slice(2), 'skip', 'Не удалось проверить'));
-    $('note').innerHTML = '<b>Проверка не удалась.</b> Попробуйте ещё раз или напишите нам – проверим вручную.';
+    $('note').innerHTML = '<b>Проверка не удалась.</b> ' + (e.message ? e.message + '. ' : '') + 'Проверьте адрес или напишите нам – проверим вручную.';
   }
 }
 
