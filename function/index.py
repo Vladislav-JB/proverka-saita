@@ -154,10 +154,7 @@ def run(url):
     tl = txt.lower()
     kb = len(body) // 1024
 
-    # --- Скорость и вес (будут через Google PageSpeed)
-    for k in ('speed', 'img', 'tap'):
-        c[k] = {'s': 'skip', 't': 'Замер скорости подключим в ближайшее время'}
-    c['weight'] = {'s': 'skip', 't': f'Код страницы – {kb} КБ. Полный вес с картинками подключим в ближайшее время'}
+    # --- Скорость, вес, картинки, кнопки – отдельным запросом ?part=speed (Google PageSpeed, 20–40 с)
 
     # --- Телефон
     if re.search(r'name=["\']viewport["\']', low):
@@ -253,12 +250,62 @@ def run(url):
     return c, final
 
 
+def mb(b):
+    return f'{b / 1048576:.1f}'.replace('.', ',') + ' МБ' if b >= 1048576 else f'{round(b / 1024)} КБ'
+
+
+def speed(url):
+    """Замер скорости на телефоне через Google PageSpeed Insights (20–40 с). Ключ – в переменной окружения функции."""
+    import os, urllib.request, urllib.parse
+    key = os.environ.get('GOOGLE_PSI_KEY')
+    if not key:
+        raise CheckError('Замер скорости временно недоступен')
+    safe_host(urlsplit(url).hostname)
+    q = urllib.parse.urlencode([('url', url), ('strategy', 'mobile'), ('category', 'performance'),
+                                ('category', 'accessibility'), ('locale', 'ru'), ('key', key)])
+    try:
+        with urllib.request.urlopen('https://www.googleapis.com/pagespeedonline/v5/runPagespeed?' + q, timeout=55) as r:
+            j = json.load(r)
+    except Exception:
+        raise CheckError('Google не смог замерить скорость этого сайта')
+    a = j.get('lighthouseResult', {}).get('audits', {})
+    score = j.get('lighthouseResult', {}).get('categories', {}).get('performance', {}).get('score')
+    c = {}
+    lcp = (a.get('largest-contentful-paint') or {}).get('numericValue')
+    if lcp is not None:
+        s = lcp / 1000
+        sec = f'{s:.1f}'.replace('.', ',')
+        tail = f' (оценка Google – {round(score * 100)} из 100)' if score is not None else ''
+        c['speed'] = {'s': 'ok' if s <= 2.5 else 'warn' if s <= 4 else 'bad',
+                      't': f'Главное видно через {sec} с' + ('' if s <= 2.5 else ' – часть клиентов уйдёт раньше') + tail}
+    w = (a.get('total-byte-weight') or {}).get('numericValue')
+    if w is not None:
+        c['weight'] = {'s': 'ok' if w <= 2 * 1048576 else 'warn' if w <= 5 * 1048576 else 'bad',
+                       't': f'Страница весит {mb(w)}' + ('' if w <= 2 * 1048576 else ' – на мобильном интернете это долго')}
+    img = a.get('image-delivery-insight') or {}
+    if img:
+        # экономия = сумма wastedBytes по картинкам (в Lighthouse 13 общего поля overallSavingsBytes нет)
+        save = sum(i.get('wastedBytes') or 0 for i in (img.get('details') or {}).get('items') or [])
+        c['img'] = {'s': 'ok', 't': 'Картинки уже хорошо сжаты'} if save < 200 * 1024 else \
+            {'s': 'warn' if save < 1048576 else 'bad', 't': f'Фото можно сжать на {mb(save)} без потери качества'}
+    ts = (a.get('target-size') or {}).get('score')
+    if ts is not None:
+        c['tap'] = {'s': 'ok', 't': 'По кнопкам и ссылкам легко попасть пальцем'} if ts >= 0.9 else \
+            {'s': 'warn', 't': 'Часть кнопок или ссылок слишком мелкие или стоят вплотную'}
+    for k in ('speed', 'weight', 'img', 'tap'):
+        c.setdefault(k, {'s': 'skip', 't': 'Google не вернул этот замер'})
+    return c
+
+
 def handler(event, context):
     if (event or {}).get('httpMethod') == 'OPTIONS':
         return {'statusCode': 204, 'headers': CORS, 'body': ''}
     q = (event or {}).get('queryStringParameters') or {}
     try:
         url = norm(q.get('url'))
+        if q.get('part') == 'speed':
+            out, code = {'url': url, 'checks': speed(url)}, 200
+            return {'statusCode': code, 'headers': CORS, 'body': json.dumps(out, ensure_ascii=False)}
         checks, final = run(url)
         out, code = {'url': url, 'final': final, 'checks': checks}, 200
     except CheckError as e:

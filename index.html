@@ -343,27 +343,48 @@ function start(u, demo) {
     `<div class="contacts"><a class="btn" href="${wa}" target="_blank" rel="noopener">WhatsApp</a><a class="btn ghost" href="https://t.me/mrJB555" target="_blank" rel="noopener">Telegram</a></div>`;
 }
 
+// Две части: быстрые пункты (1–3 с) и скорость через Google (?part=speed, 15–40 с) – вторая дозаполняет список
+const SPEED = ['speed', 'weight', 'img', 'tap'];
+let runNo = 0;
+async function getJ(q) {
+  const r = await fetch(API + '?' + q);
+  const j = await r.json();
+  if (!j.checks) throw new Error(j.error || '');
+  return j;
+}
+function fill(checks, ids) {
+  ids.forEach(id => { const c = checks[id]; c ? setS(id, c.s, c.t) : setS(id, 'skip', 'Не удалось проверить'); });
+}
+function finalNote(speedOk) {
+  const bad = document.querySelectorAll('.ci[data-s=bad]').length, warn = document.querySelectorAll('.ci[data-s=warn]').length;
+  $('note').innerHTML = '<b>Проверка завершена.</b> ' + (bad || warn
+    ? 'Красные пункты мешают клиентам сильнее всего. Поможем исправить – напишите нам.'
+    : 'Серьёзных проблем не нашли.') +
+    (speedOk ? '' : ' Скорость замерить не удалось – попробуйте позже.') +
+    `<div class="contacts"><a class="btn" href="${$('waHelp').href}" target="_blank" rel="noopener">WhatsApp</a><a class="btn ghost" href="https://t.me/mrJB555" target="_blank" rel="noopener">Telegram</a></div>`;
+}
 async function runApi(href) {
-  $('note').innerHTML = '<b>Идёт проверка.</b> Обычно это занимает до минуты.';
+  const my = ++runNo;
+  $('note').innerHTML = '<b>Идёт проверка.</b> Основные пункты – несколько секунд, скорость через Google – до 40 секунд.';
   document.querySelectorAll('.ci').forEach(el => setS(el.id.slice(2), 'run'));
+  const speedP = getJ('part=speed&url=' + encodeURIComponent(href)).then(j => ({ j }), e => ({ e }));
   try {
-    const r = await fetch(API + '?url=' + encodeURIComponent(href));
-    const j = await r.json();
-    if (!j.checks) throw new Error(j.error || '');
-    document.querySelectorAll('.ci').forEach(el => {
-      const id = el.id.slice(2), c = j.checks[id];
-      c ? setS(id, c.s, c.t) : setS(id, 'skip', 'Не удалось проверить');
-    });
-    const bad = document.querySelectorAll('.ci[data-s=bad]').length, warn = document.querySelectorAll('.ci[data-s=warn]').length;
-    $('note').innerHTML = '<b>Проверка завершена.</b> ' + (bad || warn
-      ? 'Красные пункты мешают клиентам сильнее всего. Поможем исправить – напишите нам.'
-      : 'Серьёзных проблем не нашли.') +
-      ' Скорость и разбор текста «глазами клиента» подключим в ближайшее время.' +
-      `<div class="contacts"><a class="btn" href="${$('waHelp').href}" target="_blank" rel="noopener">WhatsApp</a><a class="btn ghost" href="https://t.me/mrJB555" target="_blank" rel="noopener">Telegram</a></div>`;
+    const j = await getJ('url=' + encodeURIComponent(href));
+    if (my !== runNo) return;
+    fill(j.checks, [...document.querySelectorAll('.ci')].map(el => el.id.slice(2)).filter(id => !SPEED.includes(id)));
+    SPEED.forEach(id => setS(id, 'run', 'Замеряем через Google – до 40 секунд…'));
+    $('note').innerHTML = '<b>Основные пункты готовы.</b> Замеряем скорость на телефоне через Google – до 40 секунд.';
   } catch (e) {
+    if (my !== runNo) return;
     document.querySelectorAll('.ci').forEach(el => setS(el.id.slice(2), 'skip', 'Не удалось проверить'));
     $('note').innerHTML = '<b>Проверка не удалась.</b> ' + (e.message ? e.message + '. ' : '') + 'Проверьте адрес или напишите нам – проверим вручную.';
+    return;
   }
+  const s = await speedP;
+  if (my !== runNo) return;
+  if (s.j) fill(s.j.checks, SPEED);
+  else SPEED.forEach(id => setS(id, 'skip', 'Замерить не удалось'));
+  finalNote(!!s.j);
 }
 
 // Пример отчёта (?demo=1): условные результаты, чтобы показать, как выглядит проверка
